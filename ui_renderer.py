@@ -202,11 +202,14 @@ class UIRenderer:
             for txt, rect in botoes.items():
                 if rect.collidepoint(event.pos):
                     if txt == "Sem Tempo":
-                        return None
-                    # mapear "5 min" -> segundos
-                    mins = int(txt.split()[0])
-                    return mins * 60
+                        return 0  # valor especial que indica "sem tempo"
+                    try:
+                        mins = int(txt.split()[0])
+                        return mins * 60
+                    except ValueError:
+                        return 0
         return None
+
 
     # ------------------- Desenho do tabuleiro, peças, destaques e painel -------------------
 

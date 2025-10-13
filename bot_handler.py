@@ -1,102 +1,92 @@
 import os
-import threading
 import queue
+from multiprocessing import Process, Queue
 from stockfish import Stockfish
 
 class BotHandler:
     def __init__(self, path="stockfish.exe", default_think_ms=2000):
-        """
-        path: caminho para stockfish
-        default_think_ms: tempo (ms) que o bot deve pensar usando get_best_move_time
-        """
+
+        # path: caminho pro stockfish
+        # default_think_ms: tempo q o bot deve pensar usando get_best_move_time
+        
         self.path = path
-        self.stockfish = None
         self.available = False
         self.think_time_ms = max(50, int(default_think_ms))
-        self._worker_thread = None
+        self._process = None
         self._result_queue = None
-        self._stop_event = threading.Event()
-        self._init_engine()
+        self._init_engine_check()
 
-    def _init_engine(self):
+
+    # inicialização e as configurações
+
+    def _init_engine_check(self):
         if not os.path.exists(self.path):
             print(f"Aviso: Stockfish não encontrado em '{self.path}'. Bot ficará indisponível.")
             self.available = False
-            return
-        try:
-            self.stockfish = Stockfish(path=self.path)
-            # parâmetros padrão (ajuste via configure_skill)
-            self.stockfish.update_engine_parameters({
-                "UCI_LimitStrength": True,
-                "Skill Level": 5,
-                "UCI_Elo": 1200
-            })
+        else:
             self.available = True
-        except Exception as e:
-            print("Erro ao inicializar Stockfish:", e)
-            self.available = False
 
     def set_think_time(self, ms: int):
         self.think_time_ms = max(50, int(ms))
 
     def configure_skill(self, skill: int):
-        if not self.available or not self.stockfish:
-            return
-        elo = 800 + skill * 200
-        try:
-            self.stockfish.update_engine_parameters({
-                "Skill Level": skill,
-                "UCI_LimitStrength": True,
-                "UCI_Elo": max(200, min(3500, elo))
-            })
-        except Exception as e:
-            print("Erro ao configurar skill do Stockfish:", e)
+        
+        # só armazena o nível de dificuldade para ser usado quando o processo for criado.
 
-    def _think_worker(self, fen: str, result_q: queue.Queue, think_ms: int):
-        """Executa em thread separado; coloca a jogada (ou None) em result_q."""
+        self.skill_level = max(0, min(20, int(skill)))
+
+
+    # Execução isolada em processo
+
+    @staticmethod
+    def _think_worker_process(fen, think_ms, result_q, path, skill):
+        # função que roda em processo separado
         try:
-            if not self.available or not self.stockfish:
-                result_q.put(None)
-                return
-            # set position e buscar melhor jogada por tempo limitado
-            self.stockfish.set_fen_position(fen)
+            stockfish = Stockfish(path=path)
+            stockfish.update_engine_parameters({
+                "UCI_LimitStrength": True,
+                "Skill Level": skill,
+                "UCI_Elo": 800 + skill * 200
+            })
+            stockfish.set_fen_position(fen)
             mv = None
             try:
-                mv = self.stockfish.get_best_move_time(think_ms)
+                mv = stockfish.get_best_move_time(think_ms)
             except Exception:
-                # fallback para get_best_move
-                try:
-                    mv = self.stockfish.get_best_move()
-                except Exception:
-                    mv = None
+                mv = stockfish.get_best_move()
             result_q.put(mv)
         except Exception as e:
-            print("Erro no worker do bot:", e)
+            print("Erro no processo do bot:", e)
             result_q.put(None)
 
     def start_thinking(self, fen: str, result_q: queue.Queue = None, think_ms: int = None):
-        """
-        Inicia o pensamento do bot em background. Resultado será colocado em result_q (queue.Queue).
-        Se não fornecer result_q, cria internamente uma e retorna.
-        Retorna a queue que receberá a string UCI (ou None) quando terminar.
-        """
+        
+        # inicia o processo do bot e o resultado vai ser colocado em result_q.
+        
+        if not self.available:
+            print("Bot não disponível.")
+            return None
+
         if think_ms is None:
             think_ms = self.think_time_ms
         if result_q is None:
-            result_q = queue.Queue()
-        # se thread anterior ainda viva, não tentar iniciar outra
-        if self._worker_thread and self._worker_thread.is_alive():
-            # opcional: não iniciar duas vezes
-            return result_q
-        self._stop_event.clear()
-        t = threading.Thread(target=self._think_worker, args=(fen, result_q, think_ms), daemon=True)
-        self._worker_thread = t
+            result_q = Queue()
+
+        # evita iniciar dois processos ao mesmo tempo
+        if self._process and self._process.is_alive():
+            return self._result_queue
+
+        # inicia o processo separado
+        p = Process(target=BotHandler._think_worker_process,
+                    args=(fen, think_ms, result_q, self.path, getattr(self, "skill_level", 5)),
+                    daemon=True)
+        p.start()
+        self._process = p
         self._result_queue = result_q
-        t.start()
         return result_q
 
     def is_thinking(self) -> bool:
-        return self._worker_thread is not None and self._worker_thread.is_alive()
+        return self._process is not None and self._process.is_alive()
 
     def get_result_queue(self):
         return self._result_queue

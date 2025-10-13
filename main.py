@@ -40,12 +40,14 @@ def main():
     # fila para pensamento do bot
     bot_result_queue = None
 
-    # loop principal
+        # loop principal
     rodando = True
     while rodando:
         dt = clock.tick(FPS)
 
-        for event in pygame.event.get():
+        eventos = pygame.event.get()
+
+        for event in eventos:
             if event.type == pygame.QUIT:
                 rodando = False
                 break
@@ -65,8 +67,7 @@ def main():
                 ui.draw_menu_dificuldade()
                 escolha = ui.handle_menu_dificuldade_event(event)
                 if escolha is not None:
-                    # escolha: tuple(skill_value, label) or None
-                    skill_bot = escolha
+                    skill_bot = int(escolha) # garante q é número
                     estado_jogo = "MENU_COR"
 
             elif estado_jogo == "MENU_COR":
@@ -81,18 +82,22 @@ def main():
                 botoes = ui.draw_menu_tempo()
                 escolha = ui.handle_menu_tempo_event(event, botoes)
                 if escolha is not None:
-                    # escolha é segundos ou None (sem tempo)
+                    # 0 indica "sem tempo"
                     tempo_inicial = time.time()
-                    tempo_brancas = escolha if escolha is not None else None
-                    tempo_pretas = escolha if escolha is not None else None
+                    if escolha == 0:
+                        tempo_brancas = None
+                        tempo_pretas = None
+                    else:
+                        tempo_brancas = escolha
+                        tempo_pretas = escolha
+
                     state.reset_game()
-                    # se PVB e jogador escolheu cor, set bot skill
                     if modo_jogo == "pvb" and skill_bot is not None:
                         bot.configure_skill(skill_bot)
-                    # se for PVB e cor_jogador é preto, bot pensa primeiro
                     if modo_jogo == "pvb" and cor_jogador is not None and state.board.turn != cor_jogador:
                         bot_result_queue = bot.start_thinking(state.board.fen(), result_q=None, think_ms=bot.think_time_ms)
                     estado_jogo = "JOGANDO"
+
 
             # ---------- JOGANDO: eventos de jogo (não bloqueante) ----------
             elif estado_jogo == "JOGANDO":

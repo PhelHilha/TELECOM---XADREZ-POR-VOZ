@@ -1,3 +1,4 @@
+
 import os
 import sys
 import pygame
@@ -202,14 +203,11 @@ class UIRenderer:
             for txt, rect in botoes.items():
                 if rect.collidepoint(event.pos):
                     if txt == "Sem Tempo":
-                        return 0  # valor especial que indica "sem tempo"
-                    try:
-                        mins = int(txt.split()[0])
-                        return mins * 60
-                    except ValueError:
-                        return 0
+                        return None
+                    # mapear "5 min" -> segundos
+                    mins = int(txt.split()[0])
+                    return mins * 60
         return None
-
 
     # ------------------- Desenho do tabuleiro, peças, destaques e painel -------------------
 
@@ -220,10 +218,13 @@ class UIRenderer:
                 cor = COR_CLARA if (r + c) % 2 == 0 else COR_ESCURA
                 pygame.draw.rect(self.screen, cor, pygame.Rect(c * TAMANHO_QUADRADO, r * TAMANHO_QUADRADO, TAMANHO_QUADRADO, TAMANHO_QUADRADO))
                 if tabuleiro_invertido:
-                    quadrado_real = chess.square(7 - c, r)
+                    linha = r + 1
+                    coluna = 8 - c
                 else:
-                    quadrado_real = chess.square(c, 7 - r)
-                coord = chess.SQUARE_NAMES[quadrado_real]
+                    linha = 8 - r
+                    coluna = c + 1
+
+                coord = f"{coluna}-{linha}"
                 txt = self.font_coordenadas.render(coord, True, COR_ESCURA if (r + c) % 2 == 0 else COR_CLARA)
                 self.screen.blit(txt, (c * TAMANHO_QUADRADO + 2, r * TAMANHO_QUADRADO + 2))
 

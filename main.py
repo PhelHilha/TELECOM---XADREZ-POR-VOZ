@@ -199,7 +199,7 @@ def main():
             elif estado_jogo == "MENU_TEMPO":
                 botoes = ui.draw_menu_tempo()
                 escolha = ui.handle_menu_tempo_event(event, botoes)
-                if escolha is not None:
+                if escolha is not None or escolha is None and event.type == pygame.MOUSEBUTTONDOWN:
                     # escolha é segundos ou None (sem tempo)
                     tempo_inicial = time.time()
                     tempo_brancas = escolha if escolha is not None else None

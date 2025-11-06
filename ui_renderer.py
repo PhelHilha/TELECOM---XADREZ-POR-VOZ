@@ -1,4 +1,3 @@
-
 import os
 import sys
 import pygame
@@ -15,16 +14,19 @@ TAMANHO_QUADRADO = LARGURA_TABULEIRO // DIMENSAO
 LARGURA_PAINEL = LARGURA_TELA - LARGURA_TABULEIRO
 
 # cores
-COR_CLARA = pygame.Color(238, 238, 210)
-COR_ESCURA = pygame.Color(118, 150, 86)
-COR_DESTAQUE_SELECAO = pygame.Color(255, 255, 51, 160)
-COR_DESTAQUE_ULTIMO_MOV = pygame.Color(170, 162, 58, 150)
-COR_DESTAQUE_VALIDO = pygame.Color(0, 0, 0, 80)
-COR_PAINEL = pygame.Color("gray20")
-COR_TEXTO = pygame.Color("white")
-COR_BOTAO = pygame.Color("gray30")
-COR_BOTAO_DESISTIR = pygame.Color(180, 60, 60)
-COR_RELOGIO_ATIVO = pygame.Color(120, 190, 120)
+COR_FUNDO = (6, 8, 18)
+COR_NEON_PRIMARIA = (0, 255, 255)    # ciano
+COR_NEON_SECUNDARIA = (255, 0, 255)  # magenta
+COR_SELECAO = (255, 255, 80, 120)
+COR_GLOW_VALIDO = (0, 255, 180, 100)
+COR_TEXTO = (220, 240, 255)
+COR_BOTAO_BG = (18, 18, 30, 180)
+COR_RELOGIO_ATIVO = (0, 255, 180)
+COR_BOTAO_DESISTIR = (180, 60, 60)
+
+# cores do tabuleiro (semi-translúcidas)
+COR_TAB_CLARA = (0, 255, 255, 30)
+COR_TAB_ESCURA = (255, 0, 255, 30)
 
 # unicode peças
 PECAS_UNICODE = { 'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔',
@@ -34,13 +36,15 @@ class UIRenderer:
     def __init__(self, screen, caminho_imagens="imagens", caminho_sons=os.path.join("assets", "sounds")):
         self.screen = screen
         pygame.font.init()
+
+        fonte_padrao = pygame.font.match_font('arial') or pygame.font.get_default_font()
         self.font_pecas = pygame.font.SysFont("Segoe UI Symbol", int(TAMANHO_QUADRADO * 0.8))
-        self.font_painel_titulo = pygame.font.SysFont("helvetica", 28)
-        self.font_painel_texto = pygame.font.SysFont("helvetica", 20)
+        self.font_painel_titulo = pygame.font.Font(fonte_padrao, 28)
+        self.font_painel_texto = pygame.font.Font(fonte_padrao, 20)
         self.font_coordenadas = pygame.font.SysFont("helvetica", 14)
-        self.font_menu = pygame.font.SysFont("helvetica", 56)
-        self.font_relogio = pygame.font.SysFont("monospace", 36, bold=True)
-        self.font_label = pygame.font.SysFont("helvetica", 18, bold=True)
+        self.font_menu = pygame.font.Font(fonte_padrao, 56)
+        self.font_relogio = pygame.font.Font(fonte_padrao, 36)
+        self.font_label = pygame.font.Font(fonte_padrao, 18)
 
         # assets
         self.caminho_imagens = caminho_imagens
@@ -53,11 +57,13 @@ class UIRenderer:
 
         # precache surfaces para destaque
         self.s_sel = pygame.Surface((TAMANHO_QUADRADO, TAMANHO_QUADRADO), pygame.SRCALPHA)
-        self.s_sel.fill(COR_DESTAQUE_SELECAO)
+        self.s_sel.fill(COR_SELECAO)
+
         self.s_last = pygame.Surface((TAMANHO_QUADRADO, TAMANHO_QUADRADO), pygame.SRCALPHA)
-        self.s_last.fill(COR_DESTAQUE_ULTIMO_MOV)
+        self.s_last.fill((255, 255, 0, 60))
+
         self.s_valid = pygame.Surface((TAMANHO_QUADRADO, TAMANHO_QUADRADO), pygame.SRCALPHA)
-        self.s_valid.fill(COR_DESTAQUE_VALIDO)
+        self.s_valid.fill(COR_GLOW_VALIDO)
 
         # menus: rects usados para detecção de clique (centralizados conforme 1024x768)
         self.pvp_rect = pygame.Rect( LARGURA_TELA//2 - 200, ALTURA_TELA//2 - 80, 400, 80)
@@ -82,6 +88,9 @@ class UIRenderer:
         self.promotion_pending = False
         self.promotion_choices = []  # lista de tuples (rect, piece_type)
         self.promotion_color_is_white = True
+
+        # plano de fundo animado (podemos redesenhar cada frame)
+        self.bg_surface = pygame.Surface((LARGURA_TELA, ALTURA_TELA))
 
     # ---------------- carregamento de assets ----------------
     def load_images(self):
@@ -134,16 +143,68 @@ class UIRenderer:
         if board.is_check():
             self.play_sound('check')
 
+
+    # ------------------ utilitário: desenhar fundo animado ------------------
+    def _draw_background_animation(self):
+        # fundo escuro
+        self.bg_surface.fill(COR_FUNDO)
+
+        # linhas horizontais e linhas finas neon com opacidade dinâmica
+        t = time.time()
+        for i in range(0, ALTURA_TELA, 40):
+            alpha = int(10 + 20 * (0.5 + 0.5 * math.sin(t + i * 0.01)))
+            s = pygame.Surface((LARGURA_TELA, 2), pygame.SRCALPHA)
+            s.fill((30, 10, 40, alpha))
+            self.bg_surface.blit(s, (0, i))
+
+        # um gradiente sutil vertical (cima mais escuro)
+        grad = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+        for y in range(ALTURA_TELA):
+            v = int(8 + 40 * (y / ALTURA_TELA))
+            grad.fill((v, 6, 20, 8), rect=pygame.Rect(0, y, LARGURA_TELA, 1))
+        self.bg_surface.blit(grad, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # efeitos de nuvem/neon (círculos translúcidos)
+        for i in range(6):
+            cx = int((LARGURA_TELA * (i + 1) / 7) + 80 * math.sin(t * 0.3 + i))
+            cy = int(120 * math.sin(t * 0.7 + i) + 120 + i * 40)
+            r = 220
+            s = pygame.Surface((r, r), pygame.SRCALPHA)
+            alpha_val = max(0, min(255, int(8 + 20 * math.sin(t + i))))
+            color = (
+                int(COR_NEON_PRIMARIA[0]),
+                int(COR_NEON_PRIMARIA[1]),
+                int(COR_NEON_PRIMARIA[2]),
+                alpha_val
+            )
+            pygame.draw.circle(s, color, (r//2, r//2), r//2)
+            self.bg_surface.blit(s, (cx - r//2, cy - r//2), special_flags=pygame.BLEND_RGBA_ADD)
+
+        self.screen.blit(self.bg_surface, (0, 0))
+
+    # ------------------ BOTÕES NEON ------------------
+    def _draw_neon_button(self, rect: pygame.Rect, texto: str):
+        # animação pulsante
+        glow = 150 + int(80 * (0.5 + 0.5 * math.sin(time.time() * 2)))
+        cor_borda = (min(255, glow), 0, 255)
+        # fundo translúcido
+        s = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+        s.fill(COR_BOTAO_BG)
+        self.screen.blit(s, rect.topleft)
+        # borda neon
+        pygame.draw.rect(self.screen, cor_borda, rect, width=3, border_radius=14)
+        # texto central
+        self.draw_text_center(texto, self.font_painel_titulo, COR_TEXTO, rect.center)
+
+
     # ------------------- Menus (desenho + eventos simples não bloqueantes) -------------------
 
     def draw_menu_principal(self):
-        self.screen.fill(COR_PAINEL)
-        titulo = self.font_menu.render("Xadrez", True, COR_TEXTO)
+        self._draw_background_animation()
+        titulo = self.font_menu.render("Xadrez Por Voz", True, COR_NEON_SECUNDARIA)
         self.screen.blit(titulo, (LARGURA_TELA//2 - titulo.get_width()//2, 120))
-        pygame.draw.rect(self.screen, COR_BOTAO, self.pvp_rect, border_radius=10)
-        pygame.draw.rect(self.screen, COR_BOTAO, self.pvb_rect, border_radius=10)
-        self.draw_text_center("Jogador vs Jogador", self.font_painel_titulo, COR_TEXTO, self.pvp_rect.center)
-        self.draw_text_center("Jogador vs Bot", self.font_painel_titulo, COR_TEXTO, self.pvb_rect.center)
+        self._draw_neon_button(self.pvp_rect, "Jogador vs Jogador")
+        self._draw_neon_button(self.pvb_rect, "Jogador vs Bot")
         return self.pvp_rect, self.pvb_rect
 
     def handle_menu_principal_event(self, event, pvp_rect, pvb_rect):
@@ -155,14 +216,11 @@ class UIRenderer:
         return None
 
     def draw_menu_dificuldade(self):
-        self.screen.fill(COR_PAINEL)
-        self.draw_text_center("Escolha a Dificuldade", self.font_menu, COR_TEXTO, (LARGURA_TELA//2, 120))
-        pygame.draw.rect(self.screen, COR_BOTAO, self.fácil_rect, border_radius=10)
-        pygame.draw.rect(self.screen, COR_BOTAO, self.medio_rect, border_radius=10)
-        pygame.draw.rect(self.screen, COR_BOTAO, self.dificil_rect, border_radius=10)
-        self.draw_text_center("Bagre (Fácil)", self.font_painel_texto, COR_TEXTO, self.fácil_rect.center)
-        self.draw_text_center("Joi (Médio)", self.font_painel_texto, COR_TEXTO, self.medio_rect.center)
-        self.draw_text_center("Mr Chess (Difícil)", self.font_painel_texto, COR_TEXTO, self.dificil_rect.center)
+        self._draw_background_animation()
+        self.draw_text_center("Escolha a dificuldade", self.font_menu, COR_NEON_SECUNDARIA, (LARGURA_TELA//2, 120))
+        self._draw_neon_button(self.fácil_rect, "Bagre (Fácil)")
+        self._draw_neon_button(self.medio_rect, "Joi (Médio)")
+        self._draw_neon_button(self.dificil_rect, "Mr Chess (Difícil)")
 
     def handle_menu_dificuldade_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -175,12 +233,10 @@ class UIRenderer:
         return None
 
     def draw_menu_cor(self):
-        self.screen.fill(COR_PAINEL)
-        self.draw_text_center("Escolha sua cor", self.font_menu, COR_TEXTO, (LARGURA_TELA//2, 120))
-        pygame.draw.rect(self.screen, COR_BOTAO, self.br_rect, border_radius=10)
-        pygame.draw.rect(self.screen, COR_BOTAO, self.pr_rect, border_radius=10)
-        self.draw_text_center("Brancas", self.font_painel_titulo, COR_TEXTO, self.br_rect.center)
-        self.draw_text_center("Pretas", self.font_painel_titulo, COR_TEXTO, self.pr_rect.center)
+        self._draw_background_animation()
+        self.draw_text_center("Escolha sua cor", self.font_menu, COR_NEON_SECUNDARIA, (LARGURA_TELA//2, 120))
+        self._draw_neon_button(self.br_rect, "Brancas")
+        self._draw_neon_button(self.pr_rect, "Pretas")
 
     def handle_menu_cor_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -191,11 +247,10 @@ class UIRenderer:
         return None
 
     def draw_menu_tempo(self):
-        self.screen.fill(COR_PAINEL)
-        self.draw_text_center("Controle de Tempo", self.font_menu, COR_TEXTO, (LARGURA_TELA//2, 100))
+        self._draw_background_animation()
+        self.draw_text_center("Controle de Tempo", self.font_menu, COR_NEON_SECUNDARIA, (LARGURA_TELA//2, 100))
         for txt, rect in self.t_botoes.items():
-            pygame.draw.rect(self.screen, COR_BOTAO, rect, border_radius=10)
-            self.draw_text_center(txt, self.font_painel_titulo, COR_TEXTO, rect.center)
+            self._draw_neon_button(rect, txt)
         return self.t_botoes
 
     def handle_menu_tempo_event(self, event, botoes):
@@ -213,20 +268,26 @@ class UIRenderer:
 
     def draw_board(self, board: chess.Board, tabuleiro_invertido: bool, quadrado_selecionado, ultimo_mov):
         # fundo do tabuleiro
+        self._draw_background_animation()
+
+        # desenhar tabuleiro: quadrados translúcidos com bordas neon finas
         for r in range(DIMENSAO):
             for c in range(DIMENSAO):
-                cor = COR_CLARA if (r + c) % 2 == 0 else COR_ESCURA
-                pygame.draw.rect(self.screen, cor, pygame.Rect(c * TAMANHO_QUADRADO, r * TAMANHO_QUADRADO, TAMANHO_QUADRADO, TAMANHO_QUADRADO))
-                if tabuleiro_invertido:
-                    linha = r + 1
-                    coluna = 8 - c
-                else:
-                    linha = 8 - r
-                    coluna = c + 1
+                rect = pygame.Rect(c * TAMANHO_QUADRADO, r * TAMANHO_QUADRADO, TAMANHO_QUADRADO, TAMANHO_QUADRADO)
+                cor_trans = COR_TAB_CLARA if (r + c) % 2 == 0 else COR_TAB_ESCURA
+                s = pygame.Surface((TAMANHO_QUADRADO, TAMANHO_QUADRADO), pygame.SRCALPHA)
+                s.fill(cor_trans)
+                self.screen.blit(s, (rect.x, rect.y))
+                borda_cor = COR_NEON_PRIMARIA if (r + c) % 2 == 0 else COR_NEON_SECUNDARIA
+                pygame.draw.rect(self.screen, borda_cor, rect, width=1)
 
-                coord = f"{coluna}-{linha}"
-                txt = self.font_coordenadas.render(coord, True, COR_ESCURA if (r + c) % 2 == 0 else COR_CLARA)
-                self.screen.blit(txt, (c * TAMANHO_QUADRADO + 2, r * TAMANHO_QUADRADO + 2))
+                # coordenadas pequenas (agora em todos os quadrados no formato coluna-linha: "col-row", com 1-1 no canto inferior-esquerdo)
+                col_index = c + 1  # coluna da esquerda para a direita, começando em 1
+                row_index = DIMENSAO - r  # linhas de baixo para cima, 1 na linha inferior
+                label = f"{col_index}-{row_index}"
+                small = self.font_label.render(label, True, (90, 90, 110))
+                # posicionar no canto inferior-esquerdo do quadrado
+                self.screen.blit(small, (rect.x + 2, rect.y + TAMANHO_QUADRADO - small.get_height() - 2))
 
         # último movimento
         if ultimo_mov:
@@ -238,18 +299,17 @@ class UIRenderer:
         if quadrado_selecionado is not None:
             r, c = self.get_pos_tela(quadrado_selecionado, tabuleiro_invertido)
             self.screen.blit(self.s_sel, (c * TAMANHO_QUADRADO, r * TAMANHO_QUADRADO))
-            s = pygame.Surface((TAMANHO_QUADRADO, TAMANHO_QUADRADO), pygame.SRCALPHA)
-            s.fill(COR_DESTAQUE_VALIDO)
             for mv in board.legal_moves:
                 if mv.from_square == quadrado_selecionado:
                     r2, c2 = self.get_pos_tela(mv.to_square, tabuleiro_invertido)
                     center = (c2 * TAMANHO_QUADRADO + TAMANHO_QUADRADO // 2, r2 * TAMANHO_QUADRADO + TAMANHO_QUADRADO // 2)
-                    pygame.draw.circle(self.screen, s.get_at((0,0)), center, 12)
+                    pygame.draw.circle(self.screen, COR_NEON_PRIMARIA, center, 10)
 
-        # peças (unicode)
+        # desenhar peças (unicode) com leve offset/float
         for i in range(64):
             p = board.piece_at(i)
-            if not p: continue
+            if not p:
+                continue
             rank_real, file_real = chess.square_rank(i), chess.square_file(i)
             if tabuleiro_invertido:
                 r, c = rank_real, 7 - file_real
@@ -257,22 +317,31 @@ class UIRenderer:
                 r, c = 7 - rank_real, file_real
             simbolo = PECAS_UNICODE[p.symbol()]
             cor_peca = pygame.Color('black') if p.color == chess.BLACK else pygame.Color('white')
-            sombra = self.font_pecas.render(simbolo, True, pygame.Color('gray10'))
+            sombra = self.font_pecas.render(simbolo, True, (10, 10, 10))
             texto = self.font_pecas.render(simbolo, True, cor_peca)
             pos_x = c * TAMANHO_QUADRADO + (TAMANHO_QUADRADO - texto.get_width()) // 2
             pos_y = r * TAMANHO_QUADRADO + (TAMANHO_QUADRADO - texto.get_height()) // 2
-            for off in [(1,1),(1,-1),(-1,1),(-1,-1)]:
-                self.screen.blit(sombra, (pos_x + off[0], pos_y + off[1]))
-            self.screen.blit(texto, (pos_x, pos_y))
+            offset = int(2 * math.sin(time.time() * 3 + i))
+            # shadow
+            self.screen.blit(sombra, (pos_x + 2, pos_y + 2 + offset))
+            # piece
+            self.screen.blit(texto, (pos_x, pos_y + offset))
 
         # se há promoção pendente, desenhar modal de promoção (não bloqueante)
         if self.promotion_pending:
             self._draw_promotion_modal()
 
+    # ------------------ PAINEL LATERAL ------------------
     def draw_panel_info(self, board, tempo_brancas, tempo_pretas, historico_san, modo_jogo, skill_bot, cor_jogador):
-        pygame.draw.rect(self.screen, COR_PAINEL, pygame.Rect(LARGURA_TABULEIRO, 0, LARGURA_PAINEL, ALTURA_TELA))
+        # painel semi-transparente
+        painel_rect = pygame.Rect(LARGURA_TABULEIRO, 0, LARGURA_PAINEL, ALTURA_TELA)
+        s = pygame.Surface((painel_rect.w, painel_rect.h), pygame.SRCALPHA)
+        s.fill((6, 8, 18, 220))
+        self.screen.blit(s, painel_rect.topleft)
+
         centro_x = LARGURA_TABULEIRO + LARGURA_PAINEL // 2
         y = 20
+
         self.draw_text_center("Adversário", self.font_label, COR_TEXTO, (centro_x, y))
         y += 40
 
@@ -288,27 +357,29 @@ class UIRenderer:
             self.screen.blit(avatar, ar)
             y = ar.bottom + 10
 
-        cor_rel = COR_RELOGIO_ATIVO if board.turn != cor_jogador else COR_BOTAO
+        # relógio adversário (top)
+        cor_rel = COR_RELOGIO_ATIVO if board.turn != cor_jogador else (70, 70, 80)
         rect_rel = pygame.Rect(LARGURA_TABULEIRO + 10, y, LARGURA_PAINEL - 20, 45)
         pygame.draw.rect(self.screen, cor_rel, rect_rel, border_radius=10)
         tempo_op = tempo_pretas if cor_jogador == chess.WHITE else tempo_brancas
         self.draw_text_center(self.format_time(tempo_op), self.font_relogio, COR_TEXTO, rect_rel.center)
         y = rect_rel.bottom + 20
 
+        # histórico
         self.draw_text_center("Histórico", self.font_painel_texto, COR_TEXTO, (centro_x, y))
         y += 30
         for i, txt in enumerate(historico_san[-12:]):
             if y + i*22 < ALTURA_TELA - 160:
                 self.draw_text_center(txt, self.font_painel_texto, COR_TEXTO, (centro_x, y + i*22))
 
-        # inferior: botão desistir, relógio e avatar jogador
+        # inferior: botão desistir, relógio jogador e avatar jogador
         y_inf = ALTURA_TELA - 30
         desistir_rect = pygame.Rect(LARGURA_TABULEIRO + 20, y_inf - 50, LARGURA_PAINEL - 40, 40)
-        pygame.draw.rect(self.screen, COR_BOTAO_DESISTIR, desistir_rect, border_radius=10)
-        self.draw_text_center("Desistir", self.font_painel_texto, COR_TEXTO, desistir_rect.center)
+        # desenhar botão neon (pequeno)
+        self._draw_neon_button(desistir_rect, "Desistir")
         y_inf = desistir_rect.top - 10
 
-        cor_rel_j = COR_RELOGIO_ATIVO if board.turn == cor_jogador else COR_BOTAO
+        cor_rel_j = COR_RELOGIO_ATIVO if board.turn == cor_jogador else (70, 70, 80)
         rect_rel_j = pygame.Rect(LARGURA_TABULEIRO + 10, y_inf - 45, LARGURA_PAINEL - 20, 45)
         pygame.draw.rect(self.screen, cor_rel_j, rect_rel_j, border_radius=10)
         tempo_j = tempo_brancas if cor_jogador == chess.WHITE or modo_jogo == "pvp" else tempo_pretas
@@ -320,16 +391,16 @@ class UIRenderer:
 
         return desistir_rect
 
+    # ------------------ TELA DE FIM ------------------
     def draw_end_screen(self, resultado):
         s = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
-        s.fill((0,0,0,180))
-        self.screen.blit(s, (0,0))
-        self.draw_text_center(resultado, self.font_menu, pygame.Color('gold'), (LARGURA_TELA//2, ALTURA_TELA//3))
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        self.draw_text_center(resultado, self.font_menu, (255, 215, 0), (LARGURA_TELA//2, ALTURA_TELA//3))
         bot_rect = pygame.Rect(LARGURA_TELA//2 - 150, ALTURA_TELA//2, 300, 80)
-        pygame.draw.rect(self.screen, COR_BOTAO, bot_rect, border_radius=10)
-        self.draw_text_center("Jogar Novamente", self.font_painel_titulo, COR_TEXTO, bot_rect.center)
+        self._draw_neon_button(bot_rect, "Jogar Novamente")
         return bot_rect
-
+    
     # ------------------- Promoção (não bloqueante) -------------------
 
     def start_promotion(self, color_white=True):
@@ -349,10 +420,11 @@ class UIRenderer:
 
     def _draw_promotion_modal(self):
         overlay = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
-        overlay.fill((0,0,0,180))
-        self.screen.blit(overlay, (0,0))
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
         for r, t, lab in self.promotion_choices:
-            pygame.draw.rect(self.screen, COR_BOTAO, r, border_radius=8)
+            pygame.draw.rect(self.screen, (20, 20, 30), r, border_radius=8)
+            pygame.draw.rect(self.screen, COR_NEON_PRIMARIA, r, width=2, border_radius=8)
             self.draw_text_center(lab, self.font_painel_texto, COR_TEXTO, r.center)
 
     def end_promotion(self):
